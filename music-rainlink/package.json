@@ -1,6 +1,6 @@
 {
   "name": "music-rainlink",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Rainlink-based music plugin for PublicDiscordBOT with Lavalink v3/v4 support.",
   "author": "NekoSunePlugins",
   "main": "index.js",
@@ -10,7 +10,7 @@
   "modularDiscordBotPlugin": {
     "id": "music-rainlink",
     "name": "Music Rainlink",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "entry": "index.js",
     "defaultEnabled": false,
     "permissions": [
