@@ -10,7 +10,7 @@
   "modularDiscordBotPlugin": {
     "id": "music-rainlink",
     "name": "Music Rainlink",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "entry": "index.js",
     "defaultEnabled": false,
     "permissions": [
