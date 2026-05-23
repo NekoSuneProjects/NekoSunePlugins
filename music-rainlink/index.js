@@ -49,6 +49,21 @@ function voiceChannelFor(ctx) {
   return cachedMember?.voice?.channel || ctx.member?.voice?.channel || null;
 }
 
+
+
+function iterPlayersCollection(players) {
+  if (!players) return [];
+  if (typeof players[Symbol.iterator] === 'function') return players;
+  if (players instanceof Map) return players;
+  if (Array.isArray(players)) return players;
+  if (typeof players.values === 'function') return players.values();
+  if (typeof players.forEach === 'function') {
+    const collected = [];
+    players.forEach((value, key) => collected.push([key, value]));
+    return collected;
+  }
+  return Object.entries(players);
+}
 function queueLength(player) {
   if (!player?.queue) return 0;
   if (Array.isArray(player.queue)) return player.queue.length;
@@ -92,7 +107,8 @@ async function setupRainlink(ctx, startIndex = 0) {
 
   if (rainlink) {
     try {
-      for (const [, player] of rainlink.players || []) {
+      for (const entry of iterPlayersCollection(rainlink.players)) {
+        const player = Array.isArray(entry) ? entry[1] : entry;
         if (typeof player.destroy === 'function') await player.destroy();
       }
       if (typeof rainlink.destroy === 'function') await rainlink.destroy();
@@ -199,7 +215,8 @@ module.exports = {
 
   async unload() {
     if (!rainlink) return;
-    for (const [, player] of rainlink.players) {
+    for (const entry of iterPlayersCollection(rainlink.players)) {
+      const player = Array.isArray(entry) ? entry[1] : entry;
       if (typeof player.destroy === 'function') await player.destroy();
     }
     if (typeof rainlink.destroy === 'function') await rainlink.destroy();
