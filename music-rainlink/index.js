@@ -2,11 +2,15 @@ let runtimeContext = null;
 let Rainlink = null;
 let Library = null;
 let rainlink = null;
+let configuredNodes = [];
+let activeNodeIndex = 0;
+let failoverInProgress = false;
 
 const playerTextChannels = new Map();
 
 function getConfig(ctx, key, fallback) {
-  return ctx.configManager.getPluginConfig('music-rainlink', key, fallback);
+  if (typeof ctx.getConfig === 'function') return ctx.getConfig(key, fallback);
+  return ctx?.config?.[key] ?? fallback;
 }
 
 function getNodes(ctx) {
@@ -23,6 +27,17 @@ function getNodes(ctx) {
     secure: Boolean(node.secure),
     driver: node.driver || undefined
   }));
+}
+
+function rotateNodes(nodes, startIndex) {
+  if (!Array.isArray(nodes) || !nodes.length) return [];
+  const pivot = ((Number(startIndex) || 0) % nodes.length + nodes.length) % nodes.length;
+  return [...nodes.slice(pivot), ...nodes.slice(0, pivot)];
+}
+
+function activeNodeName() {
+  if (!configuredNodes.length) return null;
+  return configuredNodes[activeNodeIndex]?.name || null;
 }
 
 function queryText(ctx) {
@@ -47,10 +62,77 @@ async function announce(player, message) {
   if (!channelId || !runtimeContext?.client?.channels?.fetch) return;
   try {
     const channel = await runtimeContext.client.channels.fetch(channelId);
-    if (channel?.send) await channel.send(message);
+    if (channel?.send) await channel.send({ content: message });
   } catch (error) {
-    runtimeContext.logger.warn('Failed to announce message', { message, error });
+    runtimeContext.logger.warn('Failed to announce message', { message, error: error?.message || String(error) });
   }
+}
+
+async function maybeFailover(ctx, node, reason) {
+  if (!configuredNodes.length || configuredNodes.length < 2 || failoverInProgress) return;
+  const failingName = node?.options?.name || node?.name;
+  const currentName = activeNodeName();
+  if (failingName && currentName && failingName !== currentName) return;
+
+  failoverInProgress = true;
+  try {
+    const nextNodeIndex = (activeNodeIndex + 1) % configuredNodes.length;
+    if (nextNodeIndex === activeNodeIndex) return;
+    ctx.logger.warn(`Failing over Lavalink node from ${currentName || 'unknown'} to ${configuredNodes[nextNodeIndex]?.name || 'unknown'} (${reason})`);
+    await setupRainlink(ctx, nextNodeIndex);
+  } catch (error) {
+    ctx.logger.error('Lavalink failover failed', { error: error?.stack || error?.message || String(error) });
+  } finally {
+    failoverInProgress = false;
+  }
+}
+
+async function setupRainlink(ctx, startIndex = 0) {
+  activeNodeIndex = ((Number(startIndex) || 0) % configuredNodes.length + configuredNodes.length) % configuredNodes.length;
+
+  if (rainlink) {
+    try {
+      for (const [, player] of rainlink.players || []) {
+        if (typeof player.destroy === 'function') await player.destroy();
+      }
+      if (typeof rainlink.destroy === 'function') await rainlink.destroy();
+    } catch (error) {
+      ctx.logger.warn('Failed tearing down old Rainlink instance', { error: error?.message || String(error) });
+    }
+  }
+
+  rainlink = new Rainlink({
+    library: new Library.DiscordJS(ctx.client),
+    nodes: rotateNodes(configuredNodes, activeNodeIndex)
+  });
+
+  rainlink.on('nodeConnect', (node) => ctx.logger.info(`Lavalink ${node.options?.name || node.name}: Ready!`));
+  rainlink.on('nodeError', (node, error) => {
+    ctx.logger.error(`Lavalink ${node.options?.name || node.name}: Error`, { error: error?.message || String(error) });
+    void maybeFailover(ctx, node, 'nodeError');
+  });
+  rainlink.on('nodeClosed', (node) => {
+    ctx.logger.warn(`Lavalink ${node.options?.name || node.name}: Closed`);
+    void maybeFailover(ctx, node, 'nodeClosed');
+  });
+  rainlink.on('nodeDisconnect', (node, code, reason) => {
+    ctx.logger.warn(`Lavalink ${node.options?.name || node.name}: Disconnected`, { code, reason: reason || 'No reason' });
+    void maybeFailover(ctx, node, 'nodeDisconnect');
+  });
+
+  rainlink.on('trackStart', (player, track) => {
+    if (getConfig(ctx, 'announceNowPlaying', true)) announce(player, `▶️ Now playing: **${track.title}** by **${track.author}**`);
+  });
+  rainlink.on('trackEnd', (player, track) => {
+    if (getConfig(ctx, 'announceTrackEnd', false)) announce(player, `✅ Finished: **${track?.title || 'Track'}**`);
+  });
+  rainlink.on('queueEmpty', async (player) => {
+    if (getConfig(ctx, 'announceQueueEnd', true)) await announce(player, '📭 Destroyed player due to inactivity.');
+    if (getConfig(ctx, 'leaveOnQueueEnd', true) && typeof player.destroy === 'function') await player.destroy();
+  });
+
+  if (typeof rainlink.connect === 'function') await rainlink.connect();
+  ctx.logger.info(`music-rainlink active node: ${activeNodeName() || 'unknown'}`);
 }
 
 async function getOrCreatePlayer(ctx, voiceChannel, textChannelId) {
@@ -110,36 +192,8 @@ module.exports = {
     runtimeContext = ctx;
     ({ Rainlink, Library } = require('rainlink'));
 
-    rainlink = new Rainlink({
-      library: new Library.DiscordJS(ctx.client),
-      nodes: getNodes(ctx)
-    });
-
-    rainlink.on('nodeConnect', (node) => ctx.logger.info(`Lavalink node connected: ${node.options?.name || node.name}`));
-    rainlink.on('nodeError', (node, error) => ctx.logger.error('Lavalink node error', { node: node.options?.name || node.name, error }));
-    rainlink.on('trackStart', (player, track) => {
-      if (getConfig(ctx, 'announceNowPlaying', true)) {
-        announce(player, `▶️ Now playing: **${track.title}**`);
-      }
-    });
-    rainlink.on('trackEnd', (player, track) => {
-      if (getConfig(ctx, 'announceTrackEnd', false)) {
-        announce(player, `✅ Finished: **${track?.title || 'Track'}**`);
-      }
-
-      const next = player?.queue?.[0] || player?.queue?.tracks?.[0];
-      if (next) announce(player, `⏭️ Up next: **${next.title}**`);
-    });
-    rainlink.on('queueEmpty', async (player) => {
-      if (getConfig(ctx, 'announceQueueEnd', true)) {
-        await announce(player, '📭 Queue ended.');
-      }
-      if (getConfig(ctx, 'leaveOnQueueEnd', true) && typeof player.destroy === 'function') {
-        await player.destroy();
-      }
-    });
-
-    if (typeof rainlink.connect === 'function') await rainlink.connect();
+    configuredNodes = getNodes(ctx);
+    await setupRainlink(ctx, 0);
     ctx.logger.info('music-rainlink loaded');
   },
 
@@ -159,31 +213,33 @@ module.exports = {
       cooldownMs: 1500,
       options: [{ name: 'query', description: 'Song name, URL, or playlist', type: 'string', required: true }],
       async execute(ctx) {
-        if (!ctx.guildId) return ctx.reply('Music commands must be used in a guild.');
-        const voiceChannel = voiceChannelFor(ctx);
-        if (!voiceChannel) return ctx.reply('Join a voice channel first.');
+        try {
+          if (!ctx.guildId) return ctx.reply('Music commands must be used in a guild.');
+          const voiceChannel = voiceChannelFor(ctx);
+          if (!voiceChannel) return ctx.reply('You need to be in a voice channel to use this command!');
 
-        const query = queryText(ctx);
-        if (!query) return ctx.reply('Provide a query or URL.');
+          const query = queryText(ctx);
+          if (!query) return ctx.reply('Provide a query or URL.');
 
-        const textChannelId = ctx.message?.channel?.id || ctx.interaction?.channel?.id;
-        const player = await getOrCreatePlayer(ctx, voiceChannel, textChannelId);
-        const maxQueueSize = Number(getConfig(ctx, 'maxQueueSize', 50));
-        if (queueLength(player) >= maxQueueSize) return ctx.reply(`Queue limit reached (${maxQueueSize}).`);
+          const textChannelId = ctx.message?.channel?.id || ctx.interaction?.channel?.id;
+          const player = await getOrCreatePlayer(ctx, voiceChannel, textChannelId);
+          const maxQueueSize = Number(getConfig(ctx, 'maxQueueSize', 50));
+          if (queueLength(player) >= maxQueueSize) return ctx.reply(`Queue limit reached (${maxQueueSize}).`);
 
-        const result = await searchTracks(ctx, query);
-        if (result.type === 'PLAYLIST') {
-          for (const track of result.tracks.slice(0, maxQueueSize - queueLength(player))) {
-            player.queue.add(track);
+          const result = await searchTracks(ctx, query);
+          if (result.type === 'PLAYLIST') {
+            for (const track of result.tracks.slice(0, maxQueueSize - queueLength(player))) player.queue.add(track);
+            if (!player.playing && !player.paused) await player.play();
+            return ctx.reply(`Queued ${result.tracks.length} from ${result.playlistName || 'playlist'}`);
           }
-          if (!player.playing && !player.paused) await player.play();
-          return ctx.reply(`Queued playlist: **${result.playlistName || 'Playlist'}** (${result.tracks.length} tracks).`);
-        }
 
-        player.queue.add(result.tracks[0]);
-        if (getConfig(ctx, 'announceTrackAdd', true)) await ctx.reply(`Queued: **${result.tracks[0].title}**`);
-        if (!player.playing && !player.paused) await player.play();
-        return null;
+          player.queue.add(result.tracks[0]);
+          if (!player.playing && !player.paused) await player.play();
+          return ctx.reply(`Queued ${result.tracks[0].title}`);
+        } catch (error) {
+          ctx.logger.error('play command failed', { error: error?.stack || error?.message || String(error) });
+          return ctx.reply(`Could not play track: ${error?.message || 'Unknown error'}`);
+        }
       }
     },
     { name: 'pause', description: 'Pause playback.', async execute(ctx) { const p = rainlink.players.get(ctx.guildId); if (!p || p.paused) return ctx.reply('Nothing to pause.'); await p.pause(true); return ctx.reply('⏸️ Paused.'); } },
