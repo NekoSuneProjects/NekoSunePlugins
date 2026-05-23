@@ -2,6 +2,9 @@ let runtimeContext = null;
 let Rainlink = null;
 let Library = null;
 let rainlink = null;
+let configuredNodes = [];
+let activeNodeIndex = 0;
+let failoverInProgress = false;
 
 const playerTextChannels = new Map();
 
@@ -24,6 +27,17 @@ function getNodes(ctx) {
     secure: Boolean(node.secure),
     driver: node.driver || undefined
   }));
+}
+
+function rotateNodes(nodes, startIndex) {
+  if (!Array.isArray(nodes) || !nodes.length) return [];
+  const pivot = ((Number(startIndex) || 0) % nodes.length + nodes.length) % nodes.length;
+  return [...nodes.slice(pivot), ...nodes.slice(0, pivot)];
+}
+
+function activeNodeName() {
+  if (!configuredNodes.length) return null;
+  return configuredNodes[activeNodeIndex]?.name || null;
 }
 
 function queryText(ctx) {
@@ -52,6 +66,73 @@ async function announce(player, message) {
   } catch (error) {
     runtimeContext.logger.warn('Failed to announce message', { message, error: error?.message || String(error) });
   }
+}
+
+async function maybeFailover(ctx, node, reason) {
+  if (!configuredNodes.length || configuredNodes.length < 2 || failoverInProgress) return;
+  const failingName = node?.options?.name || node?.name;
+  const currentName = activeNodeName();
+  if (failingName && currentName && failingName !== currentName) return;
+
+  failoverInProgress = true;
+  try {
+    const nextNodeIndex = (activeNodeIndex + 1) % configuredNodes.length;
+    if (nextNodeIndex === activeNodeIndex) return;
+    ctx.logger.warn(`Failing over Lavalink node from ${currentName || 'unknown'} to ${configuredNodes[nextNodeIndex]?.name || 'unknown'} (${reason})`);
+    await setupRainlink(ctx, nextNodeIndex);
+  } catch (error) {
+    ctx.logger.error('Lavalink failover failed', { error: error?.stack || error?.message || String(error) });
+  } finally {
+    failoverInProgress = false;
+  }
+}
+
+async function setupRainlink(ctx, startIndex = 0) {
+  activeNodeIndex = ((Number(startIndex) || 0) % configuredNodes.length + configuredNodes.length) % configuredNodes.length;
+
+  if (rainlink) {
+    try {
+      for (const [, player] of rainlink.players || []) {
+        if (typeof player.destroy === 'function') await player.destroy();
+      }
+      if (typeof rainlink.destroy === 'function') await rainlink.destroy();
+    } catch (error) {
+      ctx.logger.warn('Failed tearing down old Rainlink instance', { error: error?.message || String(error) });
+    }
+  }
+
+  rainlink = new Rainlink({
+    library: new Library.DiscordJS(ctx.client),
+    nodes: rotateNodes(configuredNodes, activeNodeIndex)
+  });
+
+  rainlink.on('nodeConnect', (node) => ctx.logger.info(`Lavalink ${node.options?.name || node.name}: Ready!`));
+  rainlink.on('nodeError', (node, error) => {
+    ctx.logger.error(`Lavalink ${node.options?.name || node.name}: Error`, { error: error?.message || String(error) });
+    void maybeFailover(ctx, node, 'nodeError');
+  });
+  rainlink.on('nodeClosed', (node) => {
+    ctx.logger.warn(`Lavalink ${node.options?.name || node.name}: Closed`);
+    void maybeFailover(ctx, node, 'nodeClosed');
+  });
+  rainlink.on('nodeDisconnect', (node, code, reason) => {
+    ctx.logger.warn(`Lavalink ${node.options?.name || node.name}: Disconnected`, { code, reason: reason || 'No reason' });
+    void maybeFailover(ctx, node, 'nodeDisconnect');
+  });
+
+  rainlink.on('trackStart', (player, track) => {
+    if (getConfig(ctx, 'announceNowPlaying', true)) announce(player, `▶️ Now playing: **${track.title}** by **${track.author}**`);
+  });
+  rainlink.on('trackEnd', (player, track) => {
+    if (getConfig(ctx, 'announceTrackEnd', false)) announce(player, `✅ Finished: **${track?.title || 'Track'}**`);
+  });
+  rainlink.on('queueEmpty', async (player) => {
+    if (getConfig(ctx, 'announceQueueEnd', true)) await announce(player, '📭 Destroyed player due to inactivity.');
+    if (getConfig(ctx, 'leaveOnQueueEnd', true) && typeof player.destroy === 'function') await player.destroy();
+  });
+
+  if (typeof rainlink.connect === 'function') await rainlink.connect();
+  ctx.logger.info(`music-rainlink active node: ${activeNodeName() || 'unknown'}`);
 }
 
 async function getOrCreatePlayer(ctx, voiceChannel, textChannelId) {
@@ -111,30 +192,8 @@ module.exports = {
     runtimeContext = ctx;
     ({ Rainlink, Library } = require('rainlink'));
 
-    rainlink = new Rainlink({
-      library: new Library.DiscordJS(ctx.client),
-      nodes: getNodes(ctx)
-    });
-
-    rainlink.on('nodeConnect', (node) => ctx.logger.info(`Lavalink ${node.options?.name || node.name}: Ready!`));
-    rainlink.on('nodeError', (node, error) => ctx.logger.error(`Lavalink ${node.options?.name || node.name}: Error`, { error: error?.message || String(error) }));
-    rainlink.on('nodeClosed', (node) => ctx.logger.warn(`Lavalink ${node.options?.name || node.name}: Closed`));
-    rainlink.on('nodeDisconnect', (node, code, reason) => {
-      ctx.logger.warn(`Lavalink ${node.options?.name || node.name}: Disconnected`, { code, reason: reason || 'No reason' });
-    });
-
-    rainlink.on('trackStart', (player, track) => {
-      if (getConfig(ctx, 'announceNowPlaying', true)) announce(player, `▶️ Now playing: **${track.title}** by **${track.author}**`);
-    });
-    rainlink.on('trackEnd', (player, track) => {
-      if (getConfig(ctx, 'announceTrackEnd', false)) announce(player, `✅ Finished: **${track?.title || 'Track'}**`);
-    });
-    rainlink.on('queueEmpty', async (player) => {
-      if (getConfig(ctx, 'announceQueueEnd', true)) await announce(player, '📭 Destroyed player due to inactivity.');
-      if (getConfig(ctx, 'leaveOnQueueEnd', true) && typeof player.destroy === 'function') await player.destroy();
-    });
-
-    if (typeof rainlink.connect === 'function') await rainlink.connect();
+    configuredNodes = getNodes(ctx);
+    await setupRainlink(ctx, 0);
     ctx.logger.info('music-rainlink loaded');
   },
 
