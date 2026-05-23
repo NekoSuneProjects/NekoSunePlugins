@@ -5,39 +5,59 @@ let rainlink = null;
 
 let configuredNodes = [];
 let activeNodeIndex = 0;
-let failoverInProgress = false;
 
 const playerTextChannels = new Map();
 
 /* =========================
-   CONFIG HELPERS
+   CONFIG SAFE ACCESS
 ========================= */
 
 function getConfig(ctx, key, fallback) {
-  if (typeof ctx.getConfig === 'function') return ctx.getConfig(key, fallback);
-  return ctx?.config?.[key] ?? fallback;
+  try {
+    if (typeof ctx?.getConfig === 'function') {
+      const v = ctx.getConfig(key);
+      if (v !== undefined) return v;
+    }
+
+    if (ctx?.config?.[key] !== undefined) return ctx.config[key];
+    return fallback;
+  } catch {
+    return fallback;
+  }
 }
+
+/* =========================
+   NODES FIX (MAIN CRASH FIX)
+========================= */
 
 function getNodes(ctx) {
   const nodes = getConfig(ctx, 'lavalinkNodes', []);
-  if (!Array.isArray(nodes) || !nodes.length) {
-    throw new Error('No Lavalink nodes configured.');
+
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    throw new Error('[music-rainlink] lavalinkNodes missing or empty in config');
   }
 
   return nodes.map((node, i) => ({
     name: node.name || `node-${i + 1}`,
     host: node.host,
     port: Number(node.port || 2333),
-    auth: node.auth || node.password || 'youshallnotpass',
+
+    // 🔥 FIX: support both formats
+    password: node.auth || node.password,
+
     secure: Boolean(node.secure),
     driver: node.driver
   }));
 }
 
-function rotateNodes(nodes, startIndex) {
-  const pivot = ((startIndex || 0) % nodes.length + nodes.length) % nodes.length;
-  return [...nodes.slice(pivot), ...nodes.slice(0, pivot)];
+function rotateNodes(nodes, index = 0) {
+  const safeIndex = ((index % nodes.length) + nodes.length) % nodes.length;
+  return [...nodes.slice(safeIndex), ...nodes.slice(0, safeIndex)];
 }
+
+/* =========================
+   UTILITIES
+========================= */
 
 function voiceChannelFor(ctx) {
   const member =
@@ -51,10 +71,6 @@ function queryText(ctx) {
   return (ctx.options?.query || ctx.args?.join(' ') || '').trim();
 }
 
-/* =========================
-   QUEUE HELPERS
-========================= */
-
 function queueLength(player) {
   if (!player?.queue) return 0;
   if (Array.isArray(player.queue)) return player.queue.length;
@@ -63,24 +79,17 @@ function queueLength(player) {
   return 0;
 }
 
-/* =========================
-   SAFE TRACK PARSER (v3/v4)
-========================= */
-
 function normalizeResult(result) {
   const loadType =
     result.loadType ||
     result.type ||
     (result.playlistInfo ? 'PLAYLIST_LOADED' : 'TRACK_LOADED');
 
-  return {
-    ...result,
-    loadType
-  };
+  return { ...result, loadType };
 }
 
 /* =========================
-   ANNOUNCE
+   ANNOUNCE SAFE
 ========================= */
 
 async function announce(player, message) {
@@ -96,15 +105,19 @@ async function announce(player, message) {
 }
 
 /* =========================
-   FAILOVER
+   RAINLINK SETUP (FIXED)
 ========================= */
 
 async function setupRainlink(ctx, startIndex = 0) {
-  activeNodeIndex = startIndex % configuredNodes.length;
-
-  if (rainlink?.destroy) {
-    try { await rainlink.destroy(); } catch {}
+  if (!configuredNodes.length) {
+    configuredNodes = getNodes(ctx);
   }
+
+  activeNodeIndex = startIndex;
+
+  try {
+    if (rainlink?.destroy) await rainlink.destroy();
+  } catch {}
 
   rainlink = new Rainlink({
     library: new Library.DiscordJS(ctx.client),
@@ -112,7 +125,7 @@ async function setupRainlink(ctx, startIndex = 0) {
   });
 
   rainlink.on('nodeError', (node, err) => {
-    ctx.logger.error(`Node error: ${node?.name}`, { err });
+    ctx.logger.error('Lavalink node error', { node: node?.name, err });
   });
 
   rainlink.on('trackStart', (player, track) => {
@@ -123,7 +136,9 @@ async function setupRainlink(ctx, startIndex = 0) {
 
   rainlink.on('queueEmpty', async (player) => {
     if (getConfig(ctx, 'leaveOnQueueEnd', true)) {
-      try { await player.destroy(); } catch {}
+      try {
+        await player.destroy();
+      } catch {}
     }
   });
 
@@ -131,7 +146,9 @@ async function setupRainlink(ctx, startIndex = 0) {
     await rainlink.connect();
   }
 
-  ctx.logger.info(`Rainlink active node: ${configuredNodes[activeNodeIndex]?.name}`);
+  ctx.logger.info(
+    `music-rainlink active node: ${configuredNodes[activeNodeIndex]?.name}`
+  );
 }
 
 /* =========================
@@ -139,6 +156,8 @@ async function setupRainlink(ctx, startIndex = 0) {
 ========================= */
 
 async function getOrCreatePlayer(ctx, voiceChannel, textChannelId) {
+  if (!voiceChannel) throw new Error('No voice channel');
+
   let player = rainlink.players.get(ctx.guildId);
 
   if (!player) {
@@ -174,12 +193,13 @@ async function searchTracks(ctx, query) {
 }
 
 /* =========================
-   PLAY SAFE
+   SAFE PLAY
 ========================= */
 
 async function safePlay(player) {
   try {
-    if (!player || player.playing || player.paused) return;
+    if (!player) return;
+    if (player.playing || player.paused) return;
     if (!queueLength(player)) return;
 
     await player.play().catch(() => {});
@@ -187,7 +207,7 @@ async function safePlay(player) {
 }
 
 /* =========================
-   MODULE
+   MODULE EXPORT
 ========================= */
 
 module.exports = {
@@ -204,20 +224,24 @@ module.exports = {
     ({ Rainlink, Library } = require('rainlink'));
 
     configuredNodes = getNodes(ctx);
+
     await setupRainlink(ctx, 0);
 
-    ctx.logger.info('music-rainlink loaded');
+    ctx.logger.info('music-rainlink loaded successfully');
   },
 
   async unload() {
-    if (rainlink?.destroy) await rainlink.destroy();
+    try {
+      if (rainlink?.destroy) await rainlink.destroy();
+    } catch {}
+
     playerTextChannels.clear();
   },
 
   commands: [
     {
       name: 'play',
-      description: 'Play music (v3/v4 safe)',
+      description: 'Play music',
       options: [{ name: 'query', type: 'string', required: true }],
 
       async execute(ctx) {
@@ -234,31 +258,38 @@ module.exports = {
             ctx.message?.channel?.id ||
             ctx.interaction?.channel?.id;
 
-          const player = await getOrCreatePlayer(ctx, voiceChannel, textChannelId);
+          const player = await getOrCreatePlayer(
+            ctx,
+            voiceChannel,
+            textChannelId
+          );
 
           const maxQueue = getConfig(ctx, 'maxQueueSize', 50);
+
           if (queueLength(player) >= maxQueue) {
             return ctx.reply('Queue full.');
           }
 
           const result = await searchTracks(ctx, query);
 
-          // playlist
           if (result.loadType === 'PLAYLIST_LOADED') {
-            const add = result.tracks.slice(0, maxQueue - queueLength(player));
-            add.forEach(t => player.queue.add(t));
+            const add = result.tracks.slice(
+              0,
+              maxQueue - queueLength(player)
+            );
 
+            add.forEach(t => player.queue.add(t));
             await safePlay(player);
-            return ctx.reply(`Queued playlist (${add.length} tracks)`);
+
+            return ctx.reply(`Queued playlist (${add.length})`);
           }
 
-          // single track
           const track = result.tracks[0];
           player.queue.add(track);
 
           await safePlay(player);
-          return ctx.reply(`Queued: ${track.title}`);
 
+          return ctx.reply(`Queued: ${track.title}`);
         } catch (err) {
           ctx.logger.error(err);
           return ctx.reply(`Error: ${err.message}`);
@@ -302,9 +333,11 @@ module.exports = {
         const p = rainlink.players.get(ctx.guildId);
         if (!p) return ctx.reply('Nothing playing.');
 
-        if (p.queue?.clear) p.queue.clear();
-        await p.stop();
-        await p.destroy();
+        try {
+          if (p.queue?.clear) p.queue.clear();
+          await p.stop();
+          await p.destroy();
+        } catch {}
 
         return ctx.reply('Stopped.');
       }
