@@ -8,7 +8,7 @@
   "announceTrackAdd": true,
   "announceTrackEnd": false,
   "announceQueueEnd": true,
-  "defaultSearchPlatform": "ytsearch",
+  "defaultSearchPlatform": "youtube",
   "lavalinkNodes": [
     {
       "name": "main-v4",
