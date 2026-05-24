@@ -1,0 +1,336 @@
+{
+  "nightcore": {
+    "timescale": {
+      "speed": 1.2,
+      "pitch": 1.3,
+      "rate": 1.0
+    }
+  },
+  "xbox_mic": {
+    "distortion": {
+      "sinOffset": 0.0,
+      "sinScale": 1.0,
+      "cosOffset": 0.0,
+      "cosScale": 1.0,
+      "tanOffset": 0.0,
+      "tanScale": 0.0,
+      "offset": 0.0,
+      "scale": 5.0
+    }
+  },
+  "bassboost": {
+    "equalizer": [
+      {
+        "band": 0,
+        "gain": 0.2
+      },
+      {
+        "band": 1,
+        "gain": 0.3
+      },
+      {
+        "band": 2,
+        "gain": 0.3
+      },
+      {
+        "band": 3,
+        "gain": 0.2
+      },
+      {
+        "band": 4,
+        "gain": 0.1
+      },
+      {
+        "band": 5,
+        "gain": 0.1
+      },
+      {
+        "band": 6,
+        "gain": 0.0
+      }
+    ]
+  },
+  "vaporwave": {
+    "timescale": {
+      "speed": 0.85,
+      "pitch": 0.8,
+      "rate": 1.0
+    }
+  },
+  "karaoke": {
+    "karaoke": {
+      "level": 1.0,
+      "monoLevel": 1.0,
+      "filterBand": 220.0,
+      "filterWidth": 100.0
+    }
+  },
+  "chipmunk": {
+    "timescale": {
+      "speed": 1.5,
+      "pitch": 1.8,
+      "rate": 1.0
+    }
+  },
+  "3d": {
+    "rotation": {
+      "rotationHz": 0.2
+    }
+  },
+  "8d": {
+    "rotation": {
+      "rotationHz": 0.3
+    }
+  },
+  "360_audio": {
+    "rotation": {
+      "rotationHz": 0.4
+    }
+  },
+  "venum": {
+    "equalizer": [
+      {
+        "band": 0,
+        "gain": 0.5
+      },
+      {
+        "band": 1,
+        "gain": 0.5
+      },
+      {
+        "band": 2,
+        "gain": 0.3
+      },
+      {
+        "band": 3,
+        "gain": 0.1
+      },
+      {
+        "band": 4,
+        "gain": -0.1
+      },
+      {
+        "band": 5,
+        "gain": -0.3
+      },
+      {
+        "band": 6,
+        "gain": -0.5
+      }
+    ]
+  },
+  "punk": {
+    "equalizer": [
+      {
+        "band": 0,
+        "gain": 0.4
+      },
+      {
+        "band": 1,
+        "gain": 0.2
+      },
+      {
+        "band": 2,
+        "gain": 0.1
+      },
+      {
+        "band": 3,
+        "gain": -0.1
+      },
+      {
+        "band": 4,
+        "gain": -0.3
+      },
+      {
+        "band": 5,
+        "gain": -0.5
+      },
+      {
+        "band": 6,
+        "gain": -0.7
+      }
+    ]
+  },
+  "oldschool": {
+    "equalizer": [
+      {
+        "band": 0,
+        "gain": -0.2
+      },
+      {
+        "band": 1,
+        "gain": -0.1
+      },
+      {
+        "band": 2,
+        "gain": 0.0
+      },
+      {
+        "band": 3,
+        "gain": 0.1
+      },
+      {
+        "band": 4,
+        "gain": 0.2
+      },
+      {
+        "band": 5,
+        "gain": 0.3
+      },
+      {
+        "band": 6,
+        "gain": 0.4
+      }
+    ],
+    "timescale": {
+      "speed": 0.9,
+      "pitch": 0.95,
+      "rate": 1.0
+    }
+  },
+  "hardstyle": {
+    "equalizer": [
+      {
+        "band": 0,
+        "gain": 0.5
+      },
+      {
+        "band": 1,
+        "gain": 0.4
+      },
+      {
+        "band": 2,
+        "gain": 0.3
+      },
+      {
+        "band": 3,
+        "gain": 0.2
+      },
+      {
+        "band": 4,
+        "gain": 0.1
+      },
+      {
+        "band": 5,
+        "gain": 0.0
+      },
+      {
+        "band": 6,
+        "gain": -0.1
+      }
+    ],
+    "timescale": {
+      "speed": 1.1,
+      "pitch": 1.0,
+      "rate": 1.0
+    },
+    "distortion": {
+      "sinOffset": 0.0,
+      "sinScale": 2.0,
+      "cosOffset": 0.0,
+      "cosScale": 2.0,
+      "tanOffset": 0.0,
+      "tanScale": 2.0,
+      "offset": 0.0,
+      "scale": 1.5
+    }
+  },
+  "uptempo": {
+    "timescale": {
+      "speed": 1.25,
+      "pitch": 1.1,
+      "rate": 1.05
+    },
+    "equalizer": [
+      {
+        "band": 0,
+        "gain": 0.5
+      },
+      {
+        "band": 1,
+        "gain": 0.4
+      },
+      {
+        "band": 2,
+        "gain": 0.3
+      },
+      {
+        "band": 3,
+        "gain": 0.2
+      },
+      {
+        "band": 4,
+        "gain": 0.1
+      },
+      {
+        "band": 5,
+        "gain": 0.0
+      },
+      {
+        "band": 6,
+        "gain": -0.1
+      }
+    ],
+    "distortion": {
+      "sinOffset": 0.0,
+      "sinScale": 2.5,
+      "cosOffset": 0.0,
+      "cosScale": 2.5,
+      "tanOffset": 0.0,
+      "tanScale": 2.5,
+      "offset": 0.0,
+      "scale": 2.0
+    }
+  },
+  "frenchcore": {
+    "timescale": {
+      "speed": 1.5,
+      "pitch": 1.2,
+      "rate": 1.05
+    },
+    "equalizer": [
+      {
+        "band": 0,
+        "gain": 0.7
+      },
+      {
+        "band": 1,
+        "gain": 0.6
+      },
+      {
+        "band": 2,
+        "gain": 0.5
+      },
+      {
+        "band": 3,
+        "gain": 0.4
+      },
+      {
+        "band": 4,
+        "gain": 0.3
+      },
+      {
+        "band": 5,
+        "gain": 0.2
+      },
+      {
+        "band": 6,
+        "gain": 0.1
+      }
+    ],
+    "distortion": {
+      "sinOffset": 0.0,
+      "sinScale": 3.0,
+      "cosOffset": 0.0,
+      "cosScale": 3.0,
+      "tanOffset": 0.0,
+      "tanScale": 3.0,
+      "offset": 0.0,
+      "scale": 3.5
+    },
+    "rotation": {
+      "rotationHz": 0.5
+    }
+  },
+  "reset": {}
+}
