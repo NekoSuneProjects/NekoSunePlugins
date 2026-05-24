@@ -1,7 +1,16 @@
 {
   "name": "music-rainlink",
   "version": "1.1.1",
-  "description": "Rainlink-based music plugin for PublicDiscordBOT with Lavalink v3/v4 support.",
+  "description": "Rainlink-based music plugin for Pluxora with Lavalink v3/v4 support.",
+  "license": "LicenseRef-NekoSunePlugins-Restricted",
+  "keywords": [
+    "pluxora-package",
+    "pluxora",
+    "discord-bot-plugin",
+    "music",
+    "lavalink",
+    "rainlink"
+  ],
   "author": "NekoSunePlugins",
   "main": "index.js",
   "dependencies": {
